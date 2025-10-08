@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>黎生爬欄杆 (Li Sheng Climb the Fence)</title>
+  <style>
+    :root{--radius:16px}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans TC","Helvetica Neue",Arial,sans-serif;
+      background:linear-gradient(180deg,#f8fafc 0%,#eef2f7 100%);
+      color:#0f172a;
+      -webkit-tap-highlight-color:transparent;
+      user-select:none;
+    }
+    .wrap{min-height:100%;display:grid;place-items:center;padding:20px}
+    .card{width:min(1000px,95vw);background:#fff;border-radius:var(--radius);box-shadow:0 10px 28px rgba(0,0,0,.08);padding:18px}
+    .title{font-size:20px;font-weight:800;margin:0 0 12px}
+
+    .board{position:relative;overflow:hidden;border-radius:12px;background:linear-gradient(180deg,#fafafa,#f3f4f6);}
+    .startRow,.endRow{position:absolute;left:0;right:0;display:grid;grid-template-columns:repeat(4,1fr);gap:0;z-index:2}
+    .startRow{bottom:0;transform:translateY(40%)}
+    .endRow{top:0;transform:translateY(-40%)}
+
+    .endpoint{display:grid;place-items:center;height:56px}
+    .endpoint button{appearance:none;border:0;border-radius:10px;padding:8px 10px;font-weight:800;cursor:pointer;background:#10b981;color:#fff;box-shadow:0 6px 20px rgba(16,185,129,.35)}
+    .endpoint button:active{transform:translateY(1px)}
+
+    .exit{display:grid;place-items:center;height:56px;font-size:24px}
+
+    .toast{position:fixed;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .25s ease}
+    .toast.show{opacity:1;pointer-events:auto}
+    .toast .box{background:#fff;padding:28px 24px;border-radius:var(--radius);width:min(90vw,520px);text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.18)}
+    .toast h2{margin:0 0 10px;font-size:24px}
+    .toast p{margin:0 0 16px;color:#334155}
+
+    .msg{position:fixed;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .25s ease}
+    .msg.show{opacity:1;pointer-events:auto}
+    .msg .box{background:#fff;padding:24px 20px;border-radius:var(--radius);width:min(90vw,480px);text-align:center}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1 class="title">黎生爬欄杆 (Li Sheng Climb the Fence)</h1>
+      <div id="boardWrap" class="board" style="height:520px">
+        <svg id="svg" viewBox="0 0 800 520" preserveAspectRatio="none" width="100%" height="520" aria-label="Amidakuji 棋盤 (Amidakuji Board)" role="img"></svg>
+
+        <!-- 上方出口標籤 -->
+        <div class="endRow">
+          <div class="exit" id="exit0">❌</div>
+          <div class="exit" id="exit1">❌</div>
+          <div class="exit" id="exit2">❌</div>
+          <div class="exit" id="exit3">❌</div>
+        </div>
+
+        <!-- 下方起點 -->
+        <div class="startRow">
+          <div class="endpoint"><button data-start="0" type="button">起點 1 (Start 1)</button></div>
+          <div class="endpoint"><button data-start="1" type="button">起點 2 (Start 2)</button></div>
+          <div class="endpoint"><button data-start="2" type="button">起點 3 (Start 3)</button></div>
+          <div class="endpoint"><button data-start="3" type="button">起點 4 (Start 4)</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="prompt" class="msg">
+    <div class="box">
+      <h2>請選擇攀爬起點 (Please choose a climbing start point)</h2>
+      <p>從下方四個起點中點選一個，看看你能否成功爬過圍欄！<br>(Click one of the four starting points below and see if you can climb over the fence!)</p>
+      <button id="okPrompt" class="btn primary" type="button">好的 (OK)</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">
+    <div class="box">
+      <h2 id="doneTitle">結果 (Result)</h2>
+      <p id="doneDesc">—</p>
+      <div id="toastButtons" style="display:flex;gap:8px;justify-content:center"></div>
+    </div>
+  </div>
+
+  <script>
+    (()=>{
+      const COLS=4,WIDTH=800,HEIGHT=520,PADDING_X=80,PADDING_TOP=70,PADDING_BOTTOM=70;
+      const GAP=(WIDTH-PADDING_X*2)/(COLS-1);
+      const CLIMBER_SIZE=80;
+      const SPRITE_FRAMES=['climber1.png','climber2.png'];
+      const FRAME_INTERVAL=120;
+
+      const svg=document.getElementById('svg');
+      const prompt=document.getElementById('prompt');
+      const okPrompt=document.getElementById('okPrompt');
+      const toast=document.getElementById('toast');
+      const toastButtons=document.getElementById('toastButtons');
+
+      let rungs=[];let correctExit=0;let climberEl=null;let frameIndex=0;let lastFrameTime=0;
+
+      function randInt(min,max){return Math.floor(Math.random()*(max-min+1))+min;}
+      function columnX(idx){return PADDING_X+idx*GAP;}
+
+      function setSprite(idx){
+        frameIndex=idx%SPRITE_FRAMES.length;
+        const src=SPRITE_FRAMES[frameIndex];
+        climberEl.setAttributeNS('http://www.w3.org/1999/xlink','href',src);
+        climberEl.setAttribute('href',src);
+      }
+
+      function drawBoard(){
+        svg.innerHTML='';
+        for(let i=0;i<COLS;i++){
+          const x=columnX(i);
+          const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+          line.setAttribute('x1',x);line.setAttribute('x2',x);
+          line.setAttribute('y1',PADDING_TOP);line.setAttribute('y2',HEIGHT-PADDING_BOTTOM);
+          line.setAttribute('stroke','#94a3b8');line.setAttribute('stroke-width','4');
+          svg.appendChild(line);
+        }
+        rungs.forEach(r=>{
+          const bar=document.createElementNS('http://www.w3.org/2000/svg','line');
+          bar.setAttribute('x1',columnX(r.col));bar.setAttribute('x2',columnX(r.col+1));
+          bar.setAttribute('y1',r.y);bar.setAttribute('y2',r.y);
+          bar.setAttribute('stroke','#64748b');bar.setAttribute('stroke-width','6');
+          svg.appendChild(bar);
+        });
+        climberEl=document.createElementNS('http://www.w3.org/2000/svg','image');
+        climberEl.setAttribute('width',CLIMBER_SIZE);
+        climberEl.setAttribute('height',CLIMBER_SIZE);
+        climberEl.setAttribute('preserveAspectRatio','xMidYMid meet');
+        climberEl.style.opacity=0;
+        setSprite(0);
+        svg.appendChild(climberEl);
+      }
+
+      function generateRungs(){
+        const list=[];const lanes=COLS-1;
+        for(let lane=0;lane<lanes;lane++){
+          const count=randInt(3,5);
+          const ys=[];
+          for(let i=0;i<count;i++){
+            let y;
+            do{y=randInt(PADDING_TOP+20,HEIGHT-PADDING_BOTTOM-20);}while(ys.some(v=>Math.abs(v-y)<36));
+            ys.push(y);
+          }
+          ys.sort((a,b)=>a-b);ys.forEach(y=>list.push({col:lane,y}));
+        }
+        list.sort((a,b)=>a.y-b.y);
+        for(let i=1;i<list.length;i++){
+          const prev=list[i-1],cur=list[i];
+          if(Math.abs(cur.y-prev.y)<22 && Math.abs(cur.col-prev.col)===1){cur.y+=22;}
+        }
+        rungs=list;
+      }
+
+      function traceFromBottom(startIdx){
+        let col=startIdx;const bars=[...rungs].sort((a,b)=>b.y-a.y);
+        for(const bar of bars){
+          const myX=columnX(col);
+          if(myX===columnX(bar.col)) col++;
+          else if(myX===columnX(bar.col+1)) col--;
+        }
+        return col;
+      }
+
+      function buildPathFromBottom(startIdx){
+        const points=[];let col=startIdx;let yNow=HEIGHT-PADDING_BOTTOM;
+        points.push([columnX(col),yNow]);
+        const bars=[...rungs].sort((a,b)=>b.y-a.y);
+        for(const bar of bars){
+          const xNow=columnX(col);
+          if(xNow===columnX(bar.col)||xNow===columnX(bar.col+1)){
+            points.push([xNow,bar.y]);
+            const xNext=(xNow===columnX(bar.col))?columnX(bar.col+1):columnX(bar.col);
+            points.push([xNext,bar.y]);
+            col=(xNow===columnX(bar.col))?col+1:col-1;
+            yNow=bar.y;
+          }
+        }
+        points.push([columnX(col),PADDING_TOP]);
+        return points;
+      }
+
+      function animateAlong(points,done){
+        if(!climberEl)return;
+        climberEl.style.opacity=1;
+        let seg=0;
+        function animateSegment(x0,y0,x1,y1,cb){
+          const dx=x1-x0, dy=y1-y0;
+          const dist=Math.hypot(dx,dy);
+          const dur=Math.max(300, dist*3);
+          const start=performance.now();
+          lastFrameTime=start;
+          function tick(now){
+            const t=(now-start)/dur;
+            const p=Math.min(1,Math.max(0,t));
+            const cx=x0+dx*p, cy=y0+dy*p;
+            const off=CLIMBER_SIZE/2;
+            climberEl.setAttribute('x',cx-off);
+            climberEl.setAttribute('y',cy-off);
+            if(now-lastFrameTime>=FRAME_INTERVAL){
+              setSprite(frameIndex^1);
+              lastFrameTime=now;
+            }
+            if(p<1){requestAnimationFrame(tick);}else{cb&&cb();}
+          }
+          requestAnimationFrame(tick);
+        }
+        function next(){
+          if(seg>=points.length-1){done&&done();return;}
+          const [x0,y0]=points[seg];
+          const [x1,y1]=points[seg+1];
+          seg++;
+          animateSegment(x0,y0,x1,y1,next);
+        }
+        next();
+      }
+
+      function setup(){
+        generateRungs();
+        correctExit=randInt(0,COLS-1);
+        drawBoard();
+        for(let i=0;i<COLS;i++){
+          document.getElementById('exit'+i).textContent = (i===correctExit?'⭕️':'❌');
+        }
+      }
+
+      function showResult(ok){
+        document.getElementById('doneTitle').textContent=ok?'你成功爬過圍欄了 (You successfully climbed over the fence)':'你摔死了 (You fell to your death)';
+        document.getElementById('doneDesc').textContent=ok?'恭喜你可以上班了！ (Congratulations, you can go to work!)':'很可惜，此路不通。 (Unfortunately, this path is blocked.)';
+        toastButtons.innerHTML='';
+        if(ok){
+          const closeBtn=document.createElement('button');
+          closeBtn.className='btn ghost';
+          closeBtn.textContent='關閉 (Close)';
+          closeBtn.onclick=()=>toast.classList.remove('show');
+          toastButtons.appendChild(closeBtn);
+        }else{
+          const againBtn=document.createElement('button');
+          againBtn.className='btn primary';
+          againBtn.textContent='再玩一次 (Play Again)';
+          againBtn.onclick=()=>{toast.classList.remove('show');setup();prompt.classList.add('show');};
+          toastButtons.appendChild(againBtn);
+        }
+        toast.classList.add('show');
+      }
+
+      document.querySelectorAll('.endpoint button').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+          prompt.classList.remove('show');toast.classList.remove('show');
+          const startIdx=parseInt(btn.getAttribute('data-start'),10);
+          const outIdx=traceFromBottom(startIdx);
+          const path=buildPathFromBottom(startIdx);
+          animateAlong(path,()=>{
+            const ok=(outIdx===correctExit);
+            showResult(ok);
+          });
+        });
+      });
+
+      okPrompt.addEventListener('click',()=>{prompt.classList.remove('show');});
+
+      setup();prompt.classList.add('show');
+    })();
+  </script>
+</body>
+</html>

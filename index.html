@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>爬欄杆 (Climbing the Fence)</title>
+  <style>
+    :root{--radius:16px}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans TC","Helvetica Neue",Arial,sans-serif;
+      background:linear-gradient(180deg,#f8fafc 0%,#eef2f7 100%);
+      color:#0f172a;
+      -webkit-tap-highlight-color:transparent;
+      user-select:none;
+    }
+    .wrap{min-height:100%;display:grid;place-items:center;padding:20px}
+    .card{width:min(1000px,95vw);background:#fff;border-radius:var(--radius);box-shadow:0 10px 28px rgba(0,0,0,.08);padding:18px}
+    .title{font-size:20px;font-weight:800;margin:0 0 12px}
+
+    /* 棋盤：fence.jpg 背景 + 柔和漸層 */
+    .board{
+      position:relative;
+      overflow:hidden;
+      border-radius:12px;
+      background:
+        linear-gradient(180deg,rgba(250,250,250,.75),rgba(243,244,246,.75)),
+        url('fence.jpg') center/cover no-repeat;
+    }
+
+    /* O/X 與起點位置微調（往中間靠） */
+    .startRow,.endRow{
+      position:absolute;left:0;right:0;
+      display:grid;grid-template-columns:repeat(4,1fr);gap:0;z-index:2
+    }
+    .endRow{ top:24px; transform:none; }
+    .startRow{ bottom:24px; transform:none; }
+
+    .endpoint{display:grid;place-items:center;height:56px}
+    .endpoint button{
+      appearance:none;border:0;border-radius:10px;
+      padding:8px 10px;font-weight:800;cursor:pointer;
+      background:#10b981;color:#fff;box-shadow:0 6px 20px rgba(16,185,129,.35)
+    }
+    .endpoint button:active{transform:translateY(1px)}
+
+    .exit{display:grid;place-items:center;height:56px;font-size:24px}
+
+    .toast{position:fixed;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .25s ease}
+    .toast.show{opacity:1;pointer-events:auto}
+    .toast .box{background:#fff;padding:28px 24px;border-radius:var(--radius);width:min(90vw,520px);text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.18)}
+    .toast h2{margin:0 0 10px;font-size:24px}
+    .toast p{margin:0 0 16px;color:#334155}
+
+    .msg{position:fixed;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .25s ease}
+    .msg.show{opacity:1;pointer-events:auto}
+    .msg .box{background:#fff;padding:24px 20px;border-radius:var(--radius);width:min(90vw,480px);text-align:center}
+
+    .btn{appearance:none;border:0;border-radius:10px;padding:10px 14px;font-weight:800;cursor:pointer}
+    .btn.primary{background:#0ea5e9;color:#fff;box-shadow:0 6px 18px rgba(14,165,233,.35)}
+    .btn.ghost{background:#e2e8f0;color:#0f172a}
+    .btn:active{transform:translateY(1px)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1 class="title">爬欄杆 (Climbing the Fence)</h1>
+      <div id="boardWrap" class="board" style="height:520px">
+        <!-- SVG 命名空間（xlink） -->
+        <svg
+          id="svg"
+          viewBox="0 0 800 520"
+          preserveAspectRatio="none"
+          width="100%"
+          height="520"
+          aria-label="Amidakuji 棋盤 (Amidakuji Board)"
+          role="img"
+          xmlns="http://www.w3.org/2000/svg"
+          xmlns:xlink="http://www.w3.org/1999/xlink">
+        </svg>
+
+        <!-- 上方出口 -->
+        <div class="endRow">
+          <div class="exit" id="exit0">❌</div>
+          <div class="exit" id="exit1">❌</div>
+          <div class="exit" id="exit2">❌</div>
+          <div class="exit" id="exit3">❌</div>
+        </div>
+
+        <!-- 下方起點 -->
+        <div class="startRow">
+          <div class="endpoint"><button data-start="0" type="button">起點 1 (Start 1)</button></div>
+          <div class="endpoint"><button data-start="1" type="button">起點 2 (Start 2)</button></div>
+          <div class="endpoint"><button data-start="2" type="button">起點 3 (Start 3)</button></div>
+          <div class="endpoint"><button data-start="3" type="button">起點 4 (Start 4)</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="prompt" class="msg">
+    <div class="box">
+      <h2>請選擇攀爬起點 (Please choose a climbing start point)</h2>
+      <p>從下方四個起點中點選一個，看看你能否成功爬過圍欄！<br>(Click one of the four starting points below and see if you can climb over the fence!)</p>
+      <button id="okPrompt" class="btn primary" type="button">好的 (OK)</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">
+    <div class="box">
+      <h2 id="doneTitle">結果 (Result)</h2>
+      <p id="doneDesc">—</p>
+      <div id="toastButtons" style="display:flex;gap:8px;justify-content:center"></div>
+    </div>
+  </div>
+
+  <!-- 後備連結（無 JS 或被 sandbox 時可用） -->
+  <a id="fallbackLink" href="https://ths.li/pCM7909" target="_top" rel="noopener" style="display:none">Go</a>
+
+  <script>
+    (()=>{
+      const COLS=4,WIDTH=800,HEIGHT=520,PADDING_X=80;
+      const PADDING_TOP=100, PADDING_BOTTOM=100;  // 與上下標籤的安全距
+      const GAP=(WIDTH-PADDING_X*2)/(COLS-1);
+      const CLIMBER_SIZE=80;
+      const SPRITE_FRAMES=['climber1.png','climber2.png'];
+      const FRAME_INTERVAL=120;
+
+      const svg=document.getElementById('svg');
+      const prompt=document.getElementById('prompt');
+      const okPrompt=document.getElementById('okPrompt');
+      const toast=document.getElementById('toast');
+      const toastButtons=document.getElementById('toastButtons');
+
+      // ====== 導向到最外層頁面的函式（依你的範例） ======
+      const TARGET_URL = "https://ths.li/pCM7909";
+      function replaceTop(url){
+        try{
+          // 覆寫歷史；若要保留返回鍵可改用 assign(url)
+          window.top.location.replace(url);
+        }catch(err){
+          console.warn("Top navigation blocked:", err);
+          // 若被 sandbox 限制，改用後備 <a target="_top">
+          document.getElementById('fallbackLink').click();
+        }
+      }
+      // ===================================================
+
+      let rungs=[];let correctExit=0;let climberEl=null;let frameIndex=0;let lastFrameTime=0;
+
+      function randInt(min,max){return Math.floor(Math.random()*(max-min+1))+min;}
+      function columnX(idx){return PADDING_X+idx*GAP;}
+
+      function setSprite(idx){
+        frameIndex=idx%SPRITE_FRAMES.length;
+        const src=SPRITE_FRAMES[frameIndex];
+        // 兼容性：同時設 xlink:href 與 href
+        climberEl.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href',src);
+        climberEl.setAttribute('href',src);
+      }
+
+      function drawBoard(){
+        svg.innerHTML='';
+        // 直線
+        for(let i=0;i<COLS;i++){
+          const x=columnX(i);
+          const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+          line.setAttribute('x1',x);line.setAttribute('x2',x);
+          line.setAttribute('y1',PADDING_TOP);line.setAttribute('y2',HEIGHT-PADDING_BOTTOM);
+          line.setAttribute('stroke','#94a3b8');line.setAttribute('stroke-width','4');
+          svg.appendChild(line);
+        }
+        // 橫線
+        rungs.forEach(r=>{
+          const bar=document.createElementNS('http://www.w3.org/2000/svg','line');
+          bar.setAttribute('x1',columnX(r.col));bar.setAttribute('x2',columnX(r.col+1));
+          bar.setAttribute('y1',r.y);bar.setAttribute('y2',r.y);
+          bar.setAttribute('stroke','#64748b');bar.setAttribute('stroke-width','6');
+          svg.appendChild(bar);
+        });
+        // 角色
+        climberEl=document.createElementNS('http://www.w3.org/2000/svg','image');
+        climberEl.setAttribute('width',CLIMBER_SIZE);
+        climberEl.setAttribute('height',CLIMBER_SIZE);
+        climberEl.setAttribute('preserveAspectRatio','xMidYMid meet');
+        climberEl.style.opacity=0;
+        setSprite(0);
+        svg.appendChild(climberEl);
+      }
+
+      // ========= 產生橫桿：交錯網格（每列 >= 2 條） =========
+      function generateRungs(){
+        const lanes = COLS - 1;
+        const MIN_GAP = 56;      // 垂直最小距（同列＆相鄰列）
+        const MARGIN  = 20;      // 與上下邊界的安全距
+        const yMin = PADDING_TOP + MARGIN;
+        const yMax = HEIGHT - PADDING_BOTTOM - MARGIN;
+        const STEP = 2 * MIN_GAP;    // 同列的取樣步距
+        const MIN_PER_LANE = 2;      // ✅ 每列至少兩條
+
+        // 為每個 lane 建立候選 y（奇偶 lane 交錯位移，避開相鄰）
+        const candidatesByLane = Array.from({length: lanes}, (_, lane) => {
+          const base = yMin + (lane % 2) * MIN_GAP;
+          const arr = [];
+          for (let y = base; y <= yMax; y += STEP) arr.push(y);
+          return arr;
+        });
+
+        const list = [];
+
+        for (let lane = 0; lane < lanes; lane++) {
+          const cand = candidatesByLane[lane].slice();
+          const picks = [];
+
+          // 放中間附近
+          if (cand.length > 0) {
+            const mid = (yMin + yMax) / 2;
+            let bestIdx = 0, bestDiff = Infinity;
+            for (let i = 0; i < cand.length; i++) {
+              const d = Math.abs(cand[i] - mid);
+              if (d < bestDiff) { bestDiff = d; bestIdx = i; }
+            }
+            picks.push(cand.splice(bestIdx, 1)[0]);
+          }
+
+          // 放最遠的一個，拉開分佈
+          if (picks.length < MIN_PER_LANE && cand.length > 0) {
+            let farIdx = 0, maxDiff = -1, first = picks[0];
+            for (let i = 0; i < cand.length; i++) {
+              const d = Math.abs(cand[i] - first);
+              if (d > maxDiff) { maxDiff = d; farIdx = i; }
+            }
+            picks.push(cand.splice(farIdx, 1)[0]);
+          }
+
+          // 若仍不足，從剩餘候選補到至少 2 條
+          while (picks.length < MIN_PER_LANE && cand.length > 0) {
+            picks.push(cand.shift());
+          }
+
+          // 額外隨機補（3～5條上限）
+          const target = Math.max(MIN_PER_LANE, randInt(3,5));
+          while (picks.length < target && cand.length > 0) {
+            const idx = Math.floor(Math.random() * cand.length);
+            const y = cand[idx];
+            if (picks.every(v => Math.abs(v - y) >= MIN_GAP)) {
+              picks.push(y);
+            }
+            cand.splice(idx, 1);
+          }
+
+          picks.sort((a,b)=>a-b).forEach(y => list.push({col: lane, y}));
+        }
+
+        list.sort((a,b)=>a.y-b.y);
+        rungs = list;
+      }
+      // ========= 產生橫桿結束 =========
+
+      function traceFromBottom(startIdx){
+        let col=startIdx;const bars=[...rungs].sort((a,b)=>b.y-a.y);
+        for(const bar of bars){
+          const myX=columnX(col);
+          if(myX===columnX(bar.col)) col++;
+          else if(myX===columnX(bar.col+1)) col--;
+        }
+        return col;
+      }
+
+      function buildPathFromBottom(startIdx){
+        const points=[];let col=startIdx;let yNow=HEIGHT-PADDING_BOTTOM;
+        points.push([columnX(col),yNow]);
+        const bars=[...rungs].sort((a,b)=>b.y-a.y);
+        for(const bar of bars){
+          const xNow=columnX(col);
+          if(xNow===columnX(bar.col)||xNow===columnX(bar.col+1)){
+            points.push([xNow,bar.y]);
+            const xNext=(xNow===columnX(bar.col))?columnX(bar.col+1):columnX(bar.col);
+            points.push([xNext,bar.y]);
+            col=(xNow===columnX(bar.col))?col+1:col-1;
+            yNow=bar.y;
+          }
+        }
+        points.push([columnX(col),PADDING_TOP]);
+        return points;
+      }
+
+      function animateAlong(points,done){
+        if(!climberEl)return;
+        climberEl.style.opacity=1;
+        let seg=0;
+        function animateSegment(x0,y0,x1,y1,cb){
+          const dx=x1-x0, dy=y1-y0;
+          const dist=Math.hypot(dx,dy);
+          const dur=Math.max(300, dist*3);
+          const start=performance.now();
+          lastFrameTime=start;
+          function tick(now){
+            const t=(now-start)/dur;
+            const p=Math.min(1,Math.max(0,t));
+            const cx=x0+dx*p, cy=y0+dy*p;
+            const off=CLIMBER_SIZE/2;
+            climberEl.setAttribute('x',cx-off);
+            climberEl.setAttribute('y',cy-off);
+            if(now-lastFrameTime>=FRAME_INTERVAL){
+              setSprite(frameIndex^1);
+              lastFrameTime=now;
+            }
+            if(p<1){requestAnimationFrame(tick);}else{cb&&cb();}
+          }
+          requestAnimationFrame(tick);
+        }
+        function next(){
+          if(seg>=points.length-1){done&&done();return;}
+          const [x0,y0]=points[seg];
+          const [x1,y1]=points[seg+1];
+          seg++;
+          animateSegment(x0,y0,x1,y1,next);
+        }
+        next();
+      }
+
+      function setup(){
+        generateRungs();
+        correctExit=randInt(0,COLS-1);
+        drawBoard();
+        for(let i=0;i<COLS;i++){
+          document.getElementById('exit'+i).textContent = (i===correctExit?'⭕️':'❌');
+        }
+      }
+
+      function showResult(ok){
+        document.getElementById('doneTitle').textContent=ok?'你成功爬過圍欄了 (You successfully climbed over the fence)':'你摔死了 (You fell to your death)';
+        document.getElementById('doneDesc').textContent=ok?'恭喜你可以上班了！ (Congratulations, you can go to work!)':'很可惜，此路不通。 (Unfortunately, this path is blocked.)';
+        toastButtons.innerHTML='';
+        if(ok){
+          // ✅ 依需求更名並導向
+          const goBtn=document.createElement('button');
+          goBtn.className='btn primary';
+          goBtn.textContent='返工！(Go to work!)';
+          goBtn.onclick=()=>replaceTop(TARGET_URL);
+          toastButtons.appendChild(goBtn);
+        }else{
+          const againBtn=document.createElement('button');
+          againBtn.className='btn primary';
+          againBtn.textContent='再玩一次 (Play Again)';
+          againBtn.onclick=()=>{toast.classList.remove('show');setup();prompt.classList.add('show');};
+          toastButtons.appendChild(againBtn);
+        }
+        toast.classList.add('show');
+      }
+
+      document.querySelectorAll('.endpoint button').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+          prompt.classList.remove('show');toast.classList.remove('show');
+          const startIdx=parseInt(btn.getAttribute('data-start'),10);
+          const outIdx=traceFromBottom(startIdx);
+          const path=buildPathFromBottom(startIdx);
+          animateAlong(path,()=>{
+            const ok=(outIdx===correctExit);
+            showResult(ok);
+          });
+        });
+      });
+
+      okPrompt.addEventListener('click',()=>{prompt.classList.remove('show');});
+
+      setup();prompt.classList.add('show');
+    })();
+  </script>
+</body>
+</html>
